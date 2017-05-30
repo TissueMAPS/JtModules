@@ -18,7 +18,9 @@ import mahotas as mh
 import collections
 import logging
 
-VERSION = '0.4.0'
+from jtlib.filter import log_2d
+
+VERSION = '0.5.0'
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +29,13 @@ sep.set_extract_pixstack(10**7)
 Output = collections.namedtuple('Output', ['centroids', 'blobs', 'figure'])
 
 
-def main(image, mask, threshold=5, min_area=5, plot=False):
+def main(image, mask, threshold=1, min_area=5, mean_area=5, plot=False):
     '''Detects blobs in `image` using an implementation of
     `SExtractor <http://www.astromatic.net/software/sextractor>`_ [1].
+    The `image` is first convolved with a Laplacian of Gaussian filter of size
+    `mean_area` to enhance blob-like structures. The enhanced image is
+    then thresholded at `threshold` level and connected pixel components are
+    subsequently deplended.
 
     Parameters
     ----------
@@ -39,10 +45,12 @@ def main(image, mask, threshold=5, min_area=5, plot=False):
         binary or labeled image that masks pixel regions in which blobs
         should be detected
     threshold: int, optional
-        factor by which pixel values must be above background
-        to be considered part of a blob (default: ``5``)
+        factor by which pixel values in the convolved image must be above
+        background to be considered part of a blob (default: ``1``)
     min_area: int, optional
-        minimal size of a blob (default: ``5``)
+        minimal size a blob is allowed to have (default: ``5``)
+    mean_area: int, optional
+        estimated average size of a blob (default: ``5``)
     plot: bool, optional
         whether a plot should be generated (default: ``False``)
 
@@ -56,14 +64,28 @@ def main(image, mask, threshold=5, min_area=5, plot=False):
     '''
 
     logger.info('detect blobs above threshold {0}'.format(threshold))
+    img = image.astype('float')
+
+    # Clip image to attentuate artifacts
+    p = np.percentile(img, 99.999)
+    img[img>p] = p
+
+    # Create a LOG filter to enhance the image for blob detection
+    k = -1 * log_2d(size=mean_area, sigma=float(mean_area - 1)/3)
+
+    # We may want to visualize the convoled image
+    # img_c = mh.convolve(img.astype(float), k)
+    # img_c[img_c<0] = 0
+
     detection, blobs = sep.extract(
-        image.astype('float'), threshold, mask=np.invert(mask>0),
+        img, threshold, mask=np.invert(mask>0),
         minarea=min_area, segmentation_map=True,
         deblend_nthresh=500, deblend_cont=0,
-        filter_kernel=None, clean=False
+        filter_kernel=k,
+        clean=False
     )
 
-    n = len(detection)
+    n = len(np.unique(blobs[blobs > 0]))
 
     centroids = np.zeros(image.shape, dtype=np.int32)
     y = detection['y'].astype(int)
@@ -105,3 +127,4 @@ def main(image, mask, threshold=5, min_area=5, plot=False):
         figure = str()
 
     return Output(centroids, blobs, figure)
+
