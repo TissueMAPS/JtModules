@@ -80,6 +80,7 @@ def main(image, mask, threshold=1, min_area=3, mean_area=5, plot=False):
         filter_kernel=k, clean=False
     )
 
+    n = len(detection)
     centroids = np.zeros(image.shape, dtype=np.int32)
     y = detection['y'].astype(int)
     x = detection['x'].astype(int)
