@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 '''Jterator module for detection of blobs in images.'''
+import logging
+import collections
 import sep
 import numpy as np
 import mahotas as mh
-import collections
-import logging
 
 from jtlib.filter import log_2d
 
@@ -75,14 +75,10 @@ def main(image, mask, threshold=1, min_area=3, mean_area=5, plot=False):
     k = -1 * log_2d(size=mean_area, sigma=float(mean_area - 1)/3)
 
     detection, blobs = sep.extract(
-        img, threshold, mask=np.invert(mask>0),
-        minarea=min_area, segmentation_map=True,
+        img, threshold, minarea=min_area, segmentation_map=True,
         deblend_nthresh=500, deblend_cont=0,
-        filter_kernel=k,
-        clean=False
+        filter_kernel=k, clean=False
     )
-
-    n = len(np.unique(blobs[blobs > 0]))
 
     centroids = np.zeros(image.shape, dtype=np.int32)
     y = detection['y'].astype(int)
@@ -92,33 +88,29 @@ def main(image, mask, threshold=1, min_area=3, mean_area=5, plot=False):
     x[x > image.shape[1]] = image.shape[1]
     centroids[y, x] = np.arange(1, n + 1)
 
-    # Despite masking some objects are detected outside regions of interest.
-    # Let's make absolutely that no object lies outside.
-    centroids[mask == 0] = 0
-    mh.labeled.relabel(centroids, inplace=True)
+    # Blobs detected outside of regions of interest are discarded.
     blobs[mask == 0] = 0
+    blobs[mh.bwperim(mask) > 0] == 0
     mh.labeled.relabel(blobs, inplace=True)
 
-    n = np.max(blobs)
+    # We need to ensure that centroids are labeled the same way as blobs.
+    centroids[centroids > 0] = blobs[centroids > 0]
+
+    n = len(np.unique(blobs[blobs > 0]))
     logger.info('%d blobs detected', len(detection))
 
     if plot:
         logger.info('create plot')
         from jtlib import plotting
 
-        # We display the convolved image rather than the original input image,
-        # since the former is relevant for choosing a threshold level.
-        # Plotting both would be too much data and would slow down pulling the
-        # figure from the server.
-        img_c = mh.convolve(img.astype(float), k)
-        #img_c[img_c<0] = 0
+        #img_c = mh.convolve(img.astype(float), k)
 
         colorscale = plotting.create_colorscale(
             'Spectral', n=n, permute=True, add_background=True
         )
         plots = [
             plotting.create_float_image_plot(
-                img_c, 'ul', clip=True
+                image, 'ul', clip=True
             ),
             plotting.create_mask_image_plot(
                 blobs, 'ur', colorscale=colorscale
