@@ -64,6 +64,7 @@ def main(image, mask, threshold=1, min_area=3, mean_area=5, plot=False):
     '''
 
     logger.info('detect blobs above threshold {0}'.format(threshold))
+<<<<<<< HEAD
 
     # Create a LOG filter to enhance the image for blob detection
     f = -1 * log_2d(size=mean_area, sigma=float(mean_area - 1)/3)
@@ -76,6 +77,41 @@ def main(image, mask, threshold=1, min_area=3, mean_area=5, plot=False):
     n = np.unique(blobs[blobs>0])
 
     logger.info('%d blobs detected', n)
+=======
+    img = image.astype('float')
+
+    # Clip image to attentuate artifacts
+    p = np.percentile(img, 99.99)
+    img[img>p] = p
+
+    # Create a LOG filter to enhance the image prior to blob detection
+    k = -1 * log_2d(size=mean_area, sigma=float(mean_area - 1)/3)
+
+    detection, blobs = sep.extract(
+        img, threshold, minarea=min_area, segmentation_map=True,
+        deblend_nthresh=500, deblend_cont=0,
+        filter_kernel=k, clean=False
+    )
+
+    n = len(detection)
+    centroids = np.zeros(image.shape, dtype=np.int32)
+    y = detection['y'].astype(int)
+    x = detection['x'].astype(int)
+    # WTF? In rare cases object coorindates lie outside of the image.
+    y[y > image.shape[0]] = image.shape[0]
+    x[x > image.shape[1]] = image.shape[1]
+    centroids[y, x] = np.arange(1, n + 1)
+
+    # Blobs detected outside of regions of interest are discarded.
+    blobs[mask == 0] = 0
+    blobs[mh.bwperim(mask) > 0] == 0
+    mh.labeled.relabel(blobs, inplace=True)
+
+    # We need to ensure that centroids are labeled the same way as blobs.
+    centroids[centroids > 0] = blobs[centroids > 0]
+
+    n = len(np.unique(blobs[blobs > 0]))
+    logger.info('%d blobs detected', len(detection))
 
     if plot:
         logger.info('create plot')
